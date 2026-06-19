@@ -70,7 +70,7 @@ MeowShow/
 │   ├── STM32F1xx_HAL_Driver/     # STM32 HAL 驱动库（含 I2C）
 ├── tools/
 │   ├── gif_to_c.py               # GIF → C 数组转换器（支持帧合成与抽帧）
-│   ├── auto_gif.py               # 一键自动化：meow.gif → meow_anim.h
+│   ├── auto_gif.py               # 一键自动化：任意 GIF → <name>_anim.h（支持 CLI 参数）
 │   ├── gen_font_c.py             # 字库 C 代码生成器
 │   └── debug_frames/             # 调试预览帧（已加入 .gitignore）
 └── build/                        # 构建输出（已加入 .gitignore）
@@ -252,11 +252,29 @@ python tools/gif_to_c.py <gif> [name] [--threshold N] [--bg white|black]
 
 一键自动化脚本，串联整个流程：
 
-1. 读取 `meow.gif`
-2. 调用 `gif_to_c.py` 的逻辑进行帧合成、抽帧、二值化
-3. 写 `Core/Inc/meow_anim.h`
+1. 读取任意 GIF 文件（支持相对/绝对路径）
+2. 调用 `gif_to_c.py` 的逻辑进行帧合成、disposal 处理、抽帧、二值化
+3. 写入 `Core/Inc/<name>_anim.h`
 4. 保存调试预览帧到 `tools/debug_frames/`（oled_*.png 为 OLED 实际显示效果预览）
 5. 输出 Flash 用量统计
+
+**命令行用法**：
+```bash
+python tools/auto_gif.py <gif_path> [options]
+
+选项：
+  -n, --name NAME      动画显示名称（默认：从文件名推导）
+  -o, --output PATH    输出头文件路径（默认：Core/Inc/<name>_anim.h）
+  -t, --threshold N    二值化阈值 0-255（默认：140）
+  -m, --max-frames N   目标帧数（默认：32）
+  --bg {white,black}   合成画布背景色（默认：white）
+  --no-debug           不生成调试 PNG
+
+示例：
+  python tools/auto_gif.py meow1.gif -n "Meow!"
+  python tools/auto_gif.py cat.gif -t 120 -m 24
+  python tools/auto_gif.py dark.gif --bg black --no-debug
+```
 
 #### gen_font_c.py
 
@@ -268,11 +286,11 @@ python tools/gif_to_c.py <gif> [name] [--threshold N] [--bg white|black]
 
 | 属性 | 值 |
 |------|-----|
-| 来源文件 | meow.gif（240×240, 65 帧） |
-| 输出帧数 | 32 帧（均匀采样，跳过空白帧） |
+| 来源文件 | meow1.gif（120×120, 28 帧） |
+| 输出帧数 | 28 帧（全量保留，无需抽帧） |
 | 每帧大小 | 1024 字节 |
-| 总 Flash 占用 | 32,768 字节 (~32 KB) |
-| 帧延迟范围 | 50–1000 ms（经抽帧延迟调整） |
+| 总 Flash 占用 | 28,672 字节 (~28 KB) |
+| 帧延迟 | 40 ms（每帧） |
 | 循环模式 | 无限循环 |
 | 动画名称 | "Meow!" |
 
@@ -306,16 +324,18 @@ cmake --build build/ninja-release
 ### 更换动画
 
 ```bash
-# 方法一：替换 meow.gif 后运行自动化脚本
-python tools/auto_gif.py
+# 方法一：一键转换任意 GIF（推荐）
+python tools/auto_gif.py your.gif -n "DisplayName"
+# 示例：python tools/auto_gif.py meow1.gif -n "Meow!"
 
-# 方法二：手动转换任意 GIF（可调参数）
-python tools/gif_to_c.py your_animation.gif anim_name --threshold 140 --max-frames 32
+# 方法二：手动精细控制（gif_to_c.py 直接调用）
+python tools/gif_to_c.py your.gif anim_name --threshold 140 --max-frames 32
 
 # 调优建议：
-#   --threshold 100  更少的点亮像素（更暗的画面）
-#   --threshold 160  更多的点亮像素（更亮的画面）
+#   -t 100           更少的点亮像素（更暗的画面）
+#   -t 180           更多的点亮像素（更亮的画面）
 #   --bg black       深色背景的 GIF 使用黑色画布合成
+#   --no-debug       跳过调试帧生成（加速）
 #   --debug-dir DIR  保存调试帧以预览 OLED 效果
 ```
 

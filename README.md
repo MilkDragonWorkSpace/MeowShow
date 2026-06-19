@@ -75,15 +75,43 @@ openocd -f interface/stlink.cfg -f target/stm32f1x.cfg \
 ### 一键替换
 
 ```bash
-# 1. 将你的 GIF 放到项目根目录，命名为 meow.gif
-# 2. 运行自动脚本
-python tools/auto_gif.py
+# 1. 将你的 GIF 放到项目根目录
+# 2. 运行自动脚本（支持任意路径的 GIF）
+python tools/auto_gif.py meow1.gif -n "Meow!"
+
 # 3. 重新构建烧录
+cmake --build build/ninja-debug
+```
+
+`auto_gif.py` 会自动：
+- 合成 GIF 帧（处理透明度和 disposal）
+- 缩放到 128×64
+- 二值化并生成 C 头文件
+- 保存调试预览帧到 `tools/debug_frames/`
+
+### 参数说明
+
+```bash
+python tools/auto_gif.py <gif_path> [options]
+
+参数：
+  gif_path               源 GIF 文件路径（必填）
+  -n, --name NAME        动画显示名称（默认从文件名推导）
+  -o, --output PATH      输出头文件路径（默认 Core/Inc/<name>_anim.h）
+  -t, --threshold N      二值化阈值 0-255，越低像素越少（默认 140）
+  -m, --max-frames N     目标帧数，受 Flash 预算限制（默认 32）
+  --bg {white,black}     合成画布背景色（默认 white）
+  --no-debug             不生成调试 PNG
+
+示例：
+  python tools/auto_gif.py cat.gif
+  python tools/auto_gif.py cat.gif -n "MyCat" -t 120 -m 24
+  python tools/auto_gif.py dark.gif --bg black --no-debug
 ```
 
 ### 手动调优
 
-如果默认效果不理想，可以手动调整参数：
+如果默认效果不理想，可以用 `gif_to_c.py` 手动精细控制：
 
 ```bash
 # 调整二值化阈值（默认 140，越高画面越亮）
