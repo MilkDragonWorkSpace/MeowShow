@@ -16,7 +16,7 @@ sys.path.insert(0, SCRIPT_DIR)
 from gif_to_c import generate, FRAME_BYTES
 
 PROJECT_ROOT = os.path.abspath(os.path.join(SCRIPT_DIR, '..'))
-GIF_PATH     = os.path.join(PROJECT_ROOT, 'meow.gif')
+GIF_PATH     = os.path.join(PROJECT_ROOT, 'meow1.gif')
 OUTPUT_H     = os.path.join(PROJECT_ROOT, 'Core', 'Inc', 'meow_anim.h')
 DEBUG_DIR    = os.path.join(SCRIPT_DIR, 'debug_frames')
 

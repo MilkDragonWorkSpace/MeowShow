@@ -33,10 +33,19 @@ DEFAULT_MAX_FRAMES = 32
 
 def decode_gif(gif_path: str, bg_color=(255, 255, 255)) -> list[Image.Image]:
     """
-    Decode a GIF with proper frame compositing.
+    Decode a GIF with proper frame compositing and disposal handling.
 
-    Each GIF frame is pasted onto an accumulating canvas. The frame's
-    alpha channel controls which pixels overwrite the canvas.
+    Implements the full GIF89a rendering algorithm:
+      - Disposal 0 (unspecified) / 1 (do not dispose):
+          Frame content persists on the canvas. BUT if we detect that the
+          GIF author's intent was to animate a moving object (no explicit
+          disposal set on any frame), we force disposal=2 to avoid ghosting.
+      - Disposal 2 (restore to background):
+          Before pasting the next frame, clear the current frame's region
+          back to the background color.
+      - Disposal 3 (restore to previous):
+          Before pasting the next frame, restore the region to the state
+          before the current frame was drawn.
 
     Args:
         gif_path:  Path to the GIF file.
@@ -55,33 +64,94 @@ def decode_gif(gif_path: str, bg_color=(255, 255, 255)) -> list[Image.Image]:
         frame = gif.convert('RGB').resize((OLED_W, OLED_H), Image.LANCZOS)
         return [frame]
 
+    bg_rgba = bg_color + (255,) if len(bg_color) == 3 else bg_color
+
     # Canvas: accumulated display state, RGBA for alpha compositing
-    canvas = Image.new('RGBA', (screen_w, screen_h),
-                       bg_color + (255,) if len(bg_color) == 3 else bg_color)
+    canvas = Image.new('RGBA', (screen_w, screen_h), bg_rgba)
 
-    composited_frames = []
+    # ── Collect per-frame metadata (disposal, bbox) before compositing ──
+    frame_meta = []  # list of {disposal, bbox, offset}
     frame_idx = 0
-
     while True:
         try:
             gif.seek(frame_idx)
         except EOFError:
             break
-
-        # Get current frame as RGBA (with transparency from GIF)
+        disposal = gif.info.get('disposal', 0)
+        if disposal is None:
+            disposal = 0
         frame_rgba = gif.convert('RGBA')
+        bbox = frame_rgba.getbbox()  # None if frame is fully transparent
+        frame_meta.append({
+            'disposal': disposal,
+            'bbox': bbox,
+        })
+        frame_idx += 1
 
-        # Paste frame onto canvas. Using frame_rgba as its own mask means
-        # transparent pixels (alpha=0) don't overwrite the canvas, while
-        # opaque/semi-transparent pixels do.
+    total_frames = frame_idx
+
+    # ── Decide whether to force disposal=2 ──
+    # If NO frame has an explicit disposal set, the GIF author probably
+    # meant for frames to replace each other (moving-object animation).
+    # Without disposal=2, incremental frames would accumulate and ghost.
+    any_explicit_disposal = any(
+        m['disposal'] in (2, 3) for m in frame_meta
+    )
+    force_disposal_2 = not any_explicit_disposal
+
+    # ── Render with proper disposal ──
+    composited_frames = []
+
+    # For disposal=3 (restore to previous), we need the canvas state
+    # BEFORE the current frame was drawn.
+    canvas_before_prev = None  # state before the previous frame
+
+    for idx in range(total_frames):
+        gif.seek(idx)
+        meta = frame_meta[idx]
+        disposal = meta['disposal']
+        bbox = meta['bbox']
+
+        # — Handle previous frame's disposal before drawing this one —
+        if idx > 0:
+            prev_meta = frame_meta[idx - 1]
+            prev_disposal = prev_meta['disposal']
+            prev_bbox = prev_meta['bbox']
+
+            effective_disposal = prev_disposal
+            if force_disposal_2 and effective_disposal in (0, 1):
+                effective_disposal = 2
+
+            if effective_disposal == 2 and prev_bbox is not None:
+                # Restore previous frame's region to background
+                x0, y0, x1, y1 = prev_bbox
+                clear_region = Image.new('RGBA', (x1 - x0, y1 - y0), bg_rgba)
+                canvas.paste(clear_region, (x0, y0))
+
+            elif effective_disposal == 3 and canvas_before_prev is not None:
+                # Restore to state before the previous frame
+                prev_bbox_actual = prev_bbox or (0, 0, screen_w, screen_h)
+                x0, y0, x1, y1 = prev_bbox_actual
+                restore = canvas_before_prev.crop((x0, y0, x1, y1))
+                canvas.paste(restore, (x0, y0))
+
+        # — Save canvas state for disposal=3 —
+        if idx < total_frames - 1:
+            next_disposal = frame_meta[idx + 1]['disposal']
+            effective_next = 2 if (force_disposal_2 and next_disposal in (0, 1)) else next_disposal
+            if effective_next == 3:
+                canvas_before_prev = canvas.copy()
+            else:
+                canvas_before_prev = None  # not needed
+
+        # — Paste current frame onto canvas —
+        frame_rgba = gif.convert('RGBA')
         canvas.paste(frame_rgba, (0, 0), frame_rgba)
 
-        # Convert composited canvas to RGB and resize for OLED
+        # — Save composite —
         composite = canvas.convert('RGB')
         composite = composite.resize((OLED_W, OLED_H), Image.LANCZOS)
-
         composited_frames.append(composite)
-        frame_idx += 1
 
     return composited_frames
 
