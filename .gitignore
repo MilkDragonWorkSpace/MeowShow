@@ -1,0 +1,50 @@
+# ── Build output ───────────────────────────────────────────────────────────
+build/
+build-*/
+cmake-build-*/
+Debug/
+Release/
+*.elf
+*.hex
+*.bin
+*.map
+*.o
+*.d
+*.su
+
+# ── CMake generated ────────────────────────────────────────────────────────
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+CTestTestfile.cmake
+
+# ── Python ─────────────────────────────────────────────────────────────────
+__pycache__/
+*.pyc
+*.pyo
+tools/debug_frames*/
+tools/debug_frames/
+
+# ── IDE / Editor ───────────────────────────────────────────────────────────
+.vscode/c_cpp_properties.json
+.settings/bundles.store.json
+.settings/bundles-lock.store.json
+.idea/
+*.swp
+*.swo
+*~
+
+# ── OS generated ───────────────────────────────────────────────────────────
+Thumbs.db
+.DS_Store
+Desktop.ini
+
+# ── CubeMX scratch ─────────────────────────────────────────────────────────
+mx.scratch
+
+# ── Duplicate assets ───────────────────────────────────────────────────────
+assest/
+
+# ── Misc ───────────────────────────────────────────────────────────────────
+*.orig
+*.tmp
