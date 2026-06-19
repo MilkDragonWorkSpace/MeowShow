@@ -1,8 +1,8 @@
-# MeowScreen — STM32 OLED 猫猫动画播放器
+# MeowShow — STM32 OLED 猫猫动画播放器
 
 ## 项目概览
 
-MeowScreen 是一个运行在 STM32F103C8T6 微控制器上的嵌入式固件项目。它的核心功能是将一张猫猫 GIF 动画（meow.gif）转换并播放在一块 128×64 像素的 CH1116 OLED 显示屏上。
+MeowShow 是一个运行在 STM32F103C8T6 微控制器上的嵌入式固件项目。它的核心功能是将一张猫猫 GIF 动画（meow.gif）转换并播放在一块 128×64 像素的 CH1116 OLED 显示屏上。
 
 项目基于 STM32CubeMX HAL 库生成底层外设配置，使用 CMake + ARM GCC（arm-none-eabi-gcc）工具链构建，运行在 STM32_KIT 学习板上。
 
@@ -15,11 +15,12 @@ MeowScreen 是一个运行在 STM32F103C8T6 微控制器上的嵌入式固件项
 | 主控芯片 | STM32F103C8T6（Cortex-M3, 64KB Flash, 20KB SRAM） |
 | 开发板 | STM32_KIT 学习板 |
 | 显示屏 | CH1116 OLED, 128×64 像素, I2C 接口 |
-| I2C 地址 | 0x7A（7 位地址） |
+| I2C 地址 | **0x3D**（7 位地址；文档常以 8 位写地址 0x7A 标注） |
 | I2C 引脚 | PB6=SCL, PB7=SDA |
 | I2C 速率 | 400 kHz（Fast Mode） |
+| I2C 超时 | 100 ms（防止 OLED 无应答时 MCU 死等） |
 | 外部晶振 | 8 MHz HSE |
-| 系统时钟 | 72 MHz（PLL x9, 来源 HSE；HSE 失败时回退 HSI 64MHz） |
+| 系统时钟 | 72 MHz（PLL ×9, 来源 HSE；HSE 失败时回退 HSI 64 MHz） |
 | 调试接口 | ST-LINK（PA14=SWCLK, PA13=SWDIO） |
 
 ---
@@ -29,43 +30,50 @@ MeowScreen 是一个运行在 STM32F103C8T6 微控制器上的嵌入式固件项
 ### 文件结构
 
 ```
-MeowScreen/
-├── CMakeLists.txt              # 顶层 CMake 构建配置
-├── CMakePresets.json           # CMake 预设（Debug/Release, Ninja/VS）
-├── MeowScreen.ioc              # STM32CubeMX 项目文件
-├── STM32F103XX_FLASH.ld        # 链接脚本
-├── startup_stm32f103xb.s       # 启动汇编
-├── meow.gif                    # 原始 GIF 动画素材
+MeowShow/
+├── .clangd                       # clangd 语言服务器配置
+├── .gitignore                    # Git 忽略规则
+├── CMakeLists.txt                # 顶层 CMake 构建配置
+├── CMakePresets.json             # CMake 预设（Debug/Release, Ninja/VS）
+├── MeowShow.ioc                  # STM32CubeMX 项目文件
+├── STM32F103XX_FLASH.ld          # 链接脚本
+├── startup_stm32f103xb.s         # 启动汇编
+├── meow.gif                      # 原始 GIF 动画素材（240×240, 65 帧）
+├── PROJECT_DESCRIPTION.md        # 本文档
+├── stm32_kit_schematic_bried.md  # 学习板原理图说明
 ├── cmake/
-│   ├── gcc-arm-none-eabi.cmake # ARM GCC 工具链文件
-│   └── stm32cubemx/            # CubeMX 生成的 CMake 子项目
+│   ├── gcc-arm-none-eabi.cmake   # ARM GCC 工具链文件
+│   ├── starm-clang.cmake         # ARM Clang 工具链文件（备用）
+│   └── stm32cubemx/              # CubeMX 生成的 CMake 子项目
 ├── Core/
 │   ├── Inc/
-│   │   ├── main.h              # 主头文件
-│   │   ├── gpio.h              # GPIO 配置
-│   │   ├── oled.h              # OLED 驱动 API
-│   │   ├── gif_animation.h     # GIF 动画播放引擎 API
-│   │   ├── meow_anim.h         # 自动生成的猫猫动画帧数据
-│   │   ├── stm32f1xx_hal_conf.h
+│   │   ├── main.h                # 主头文件（含 I2C 句柄声明）
+│   │   ├── gpio.h                # GPIO 配置
+│   │   ├── oled.h                # OLED 驱动 API
+│   │   ├── gif_animation.h       # GIF 动画播放引擎 API
+│   │   ├── meow_anim.h           # 自动生成的猫猫动画帧数据（32 帧）
+│   │   ├── stm32f1xx_hal_conf.h  # HAL 模块配置（已启用 I2C）
 │   │   └── stm32f1xx_it.h
 │   ├── Src/
-│   │   ├── main.c              # 主程序入口
-│   │   ├── gpio.c              # GPIO 初始化
-│   │   ├── oled.c              # OLED 驱动实现
-│   │   ├── gif_animation.c     # 动画播放引擎实现
-│   │   ├── font.c              # 位图字库（8x6/12x6/16x8/16x16）
-│   │   ├── stm32f1xx_hal_msp.c
+│   │   ├── main.c                # 主程序入口
+│   │   ├── gpio.c                # GPIO 初始化（含 GPIOB 时钟）
+│   │   ├── oled.c                # OLED 驱动实现
+│   │   ├── gif_animation.c       # 动画播放引擎实现
+│   │   ├── font.c                # 位图字库（8x6/12x6/16x8/16x16）
+│   │   ├── stm32f1xx_hal_msp.c   # HAL MSP（含 I2C1 MSP 初始化）
 │   │   ├── stm32f1xx_it.c
 │   │   ├── system_stm32f1xx.c
 │   │   ├── syscalls.c
 │   │   └── sysmem.c
 ├── Drivers/
-│   ├── CMSIS/                  # ARM CMSIS 核心头文件
-│   ├── STM32F1xx_HAL_Driver/   # STM32 HAL 驱动库
+│   ├── CMSIS/                    # ARM CMSIS 核心头文件
+│   ├── STM32F1xx_HAL_Driver/     # STM32 HAL 驱动库（含 I2C）
 ├── tools/
-│   ├── gif_to_c.py             # GIF → C 数组转换器
-│   └── auto_gif.py             # 一键自动化：meow.gif → meow_anim.h → main.c
-└── build/                      # 构建输出（已加入 .gitignore）
+│   ├── gif_to_c.py               # GIF → C 数组转换器（支持帧合成与抽帧）
+│   ├── auto_gif.py               # 一键自动化：meow.gif → meow_anim.h
+│   ├── gen_font_c.py             # 字库 C 代码生成器
+│   └── debug_frames/             # 调试预览帧（已加入 .gitignore）
+└── build/                        # 构建输出（已加入 .gitignore）
 ```
 
 ### 模块依赖关系
@@ -90,21 +98,30 @@ main.c
 
 **帧缓冲布局**：
 - 大小：1024 字节（8 页 × 128 列）
-- 排布：列优先（page-first），即 `buffer[page][col]`
+- 排布：页优先（page-first），即 `buffer[page][col]`
 - 每个字节代表同一列内 8 个垂直像素，Bit 0 = 顶部像素
-- 与 CH1116 I2C 水平寻址模式的传输顺序一致
+- 与 CH1116 页寻址模式下的传输顺序一致
 
 **CH1116 初始化流程**：
 1. 等待 50ms（OLED 上电速度慢于 STM32 启动）
 2. 发送 Display OFF（0xAE）
 3. 配置振荡频率、复用比（64 行）、显示偏移
-4. 启用电荷泵（charge pump）
-5. 设置水平寻址模式
-6. 配置段重映射（A1）和 COM 扫描方向（C8）
-7. 配置 COM 引脚硬件、对比度、预充电周期、VCOMH
+4. 启用电荷泵（charge pump, 0x8D + 0x14）
+5. 设置**页寻址模式**（0x20 + 0x02）— 比水平寻址模式更可靠
+6. 配置段重映射（0xA1）和 COM 扫描方向（0xC8）
+7. 配置 COM 引脚硬件（0xDA + 0x12）、对比度、预充电周期、VCOMH
 8. 恢复正常显示、解除反转、停用滚动
 9. 再等 100ms 后发送 Display ON（0xAF）
 10. 清空帧缓冲并刷新
+
+**关键设计决策 — 逐页传输**：
+`OLED_ShowFrame()` 按页（8 页 × 128 字节）逐页发送数据，而非一次性发送全部 1024 字节。原因是：
+- STM32F1 的 I2C 外设在 `HAL_I2C_Mem_Write` 中存在隐式的传输大小上限（约 255 字节）
+- 一次性发送 1024 字节会导致仅前 512 字节被写入，后 4 页保留上电随机数据（表现为底部雪花白屏）
+- 逐页发送：每页设置页地址（0xB0+page）、列归零（0x00, 0x10）、发送 128 字节，避免任何 HAL 传输限制
+
+**I2C 数据发送**：
+`OLED_WriteData()` 使用栈上 129 字节缓冲区（1 字节控制码 0x40 + 128 字节像素数据），通过 `HAL_I2C_Master_Transmit` 一次性发送。不再使用 `HAL_I2C_Mem_Write`（其大小限制不可靠）。
 
 **绘图 API**：
 - `OLED_SetPixel(x, y, color)` — 单像素
@@ -116,18 +133,14 @@ main.c
 - `OLED_DrawImage(x, y, img, color)` — 位图图像渲染
 - `OLED_DrawFullBitmap(data[1024])` — 全帧快速 blit（直接 memcpy）
 - `OLED_NewFrame()` — 清空帧缓冲
-- `OLED_ShowFrame()` — 将帧缓冲通过 I2C 整体发送到 OLED
+- `OLED_ShowFrame()` — 逐页发送帧缓冲到 OLED
 
-**字库**（font.c）：
+**字库**（font.c，由 `tools/gen_font_c.py` 生成）：
 - `font8x6` — 8×6 像素，95 个可打印 ASCII 字符
 - `font12x6` — 12×6 像素
 - `font16x8` — 16×8 像素
 - `font16x16` — 16×16 像素（适合汉字或大标题）
 - 字库数据采用列优先存储
-
-**I2C 通信**：
-- 指令发送：`[0x00, cmd]` 两字节
-- 数据发送：小量逐字节发 `[0x40, data]`；大量（>32 字节）使用 `HAL_I2C_Mem_Write` 一次性传输
 
 ---
 
@@ -175,8 +188,8 @@ API：
 每帧渲染流程：
 1. `OLED_NewFrame()` 清空帧缓冲
 2. `OLED_DrawFullBitmap(bitmap)` 快速 blit 帧数据
-3. 绘制底部分隔线和动画名称
-4. `OLED_ShowFrame()` 发送到 OLED
+3. 绘制底部分隔线和动画名称（font8x6 字体）
+4. `OLED_ShowFrame()` 逐页发送到 OLED
 5. 忙等待至帧延迟结束
 
 ---
@@ -189,7 +202,9 @@ API：
 2. `SystemClock_Config()` — 配置系统时钟：
    - 首选方案：HSE 8MHz → PLL ×9 = 72MHz
    - 回退方案：若 HSE 启动失败 → HSI 8MHz/2 → PLL ×16 = 64MHz
-3. `MX_GPIO_Init()` — 使能 GPIOA 时钟
+   - **重要**：STM32F103C8T6 无 HSE 预分频器，不可设置 `HSEPredivValue`
+   - 时钟配置后显式调用 `HAL_SYSTICK_Config(HAL_RCC_GetHCLKFreq() / 1000U)` 确保 `HAL_Delay()` 时序正确
+3. `MX_GPIO_Init()` — 使能 GPIOA + GPIOB 时钟
 4. `MX_I2C1_Init()` — 配置 I2C1：
    - PB6=SCL, PB7=SDA
    - 开漏输出, AF 模式
@@ -218,22 +233,34 @@ API：
 
 **处理流程**：
 1. 使用 Pillow 逐帧读取 GIF
-2. 每帧：缩放至 128×64 → 灰度 → 二值化（阈值 128）
-3. 按 CH1116 列优先 / 页优先布局重组位数据
-4. 提取 GIF 帧延迟（centiseconds → milliseconds）
-5. 生成 C 代码：`frame_N[1024]` 数组 + `GifFrame[]` + `GifAnimation` 结构体
+2. **帧合成（Compositing）**：GIF 帧通常是增量差量（delta），仅包含变化的像素。工具将每帧的 RGBA 数据（保留透明度）逐个叠加到白色画布上——透明像素不覆盖画布。这正确重建了完整画面
+3. 合成后的画面缩放到 128×64（LANCZOS 插值）
+4. **二值化**：灰度值 < 阈值（默认 140）→ OLED 点亮；≥ 阈值 → OLED 熄灭
+5. 按 CH1116 页优先 / 列优先布局重组位数据
+6. **智能抽帧**：从原始帧中均匀采样 N 帧，跳过内容过少的空白帧，调整帧延迟以保持动画节奏
+7. 生成 C 代码：`frame_N[1024]` 数组 + `GifFrame[]` + `GifAnimation` 结构体
 
-**Flash 预算**：STM32F103C8T6 共 64KB Flash，帧数据最多约 52KB（留 12KB 给代码），即最多约 50 帧。
+**命令行选项**：
+```bash
+python tools/gif_to_c.py <gif> [name] [--threshold N] [--bg white|black]
+                          [--max-frames N] [--debug-dir DIR]
+```
+
+**Flash 预算**：STM32F103C8T6 共 64KB Flash，帧数据默认最多 32KB（32 帧），为代码留出约 32KB。
 
 #### auto_gif.py
 
 一键自动化脚本，串联整个流程：
 
 1. 读取 `meow.gif`
-2. 调用 `gif_to_c.py` 的逻辑转换为 C 代码
+2. 调用 `gif_to_c.py` 的逻辑进行帧合成、抽帧、二值化
 3. 写 `Core/Inc/meow_anim.h`
-4. 重写 `Core/Src/main.c`，将主循环指向 `gif_meow_anim`
+4. 保存调试预览帧到 `tools/debug_frames/`（oled_*.png 为 OLED 实际显示效果预览）
 5. 输出 Flash 用量统计
+
+#### gen_font_c.py
+
+字库 C 代码生成器。手工设计 95 个 ASCII 字符的点阵字形，以列优先格式输出为 `Core/Src/font.c`。
 
 ---
 
@@ -241,15 +268,15 @@ API：
 
 | 属性 | 值 |
 |------|-----|
-| 来源文件 | meow.gif |
-| 帧数 | 32 帧 |
+| 来源文件 | meow.gif（240×240, 65 帧） |
+| 输出帧数 | 32 帧（均匀采样，跳过空白帧） |
 | 每帧大小 | 1024 字节 |
 | 总 Flash 占用 | 32,768 字节 (~32 KB) |
-| 帧延迟范围 | 80–160 ms |
+| 帧延迟范围 | 50–1000 ms（经抽帧延迟调整） |
 | 循环模式 | 无限循环 |
 | 动画名称 | "Meow!" |
 
-动画数据由 `auto_gif.py` 自动生成，帧数据以 `static const uint8_t meow_anim_frame_N[1024]` 的形式存储在 Flash 中。
+动画数据由 `auto_gif.py` 自动生成，帧数据以 `static const uint8_t meow_frame_N[1024]` 的形式存储在 Flash 中。
 
 ---
 
@@ -282,11 +309,14 @@ cmake --build build/ninja-release
 # 方法一：替换 meow.gif 后运行自动化脚本
 python tools/auto_gif.py
 
-# 方法二：手动转换任意 GIF
-python tools/gif_to_c.py your_animation.gif anim_name
-# 然后将生成的 anim_name.h 复制到 Core/Inc/
-# 并在 main.c 中添加 #include "anim_name.h"
-# 调用 GifAnim_Play(&gif_anim_name, 1);
+# 方法二：手动转换任意 GIF（可调参数）
+python tools/gif_to_c.py your_animation.gif anim_name --threshold 140 --max-frames 32
+
+# 调优建议：
+#   --threshold 100  更少的点亮像素（更暗的画面）
+#   --threshold 160  更多的点亮像素（更亮的画面）
+#   --bg black       深色背景的 GIF 使用黑色画布合成
+#   --debug-dir DIR  保存调试帧以预览 OLED 效果
 ```
 
 ### 烧录到设备
@@ -301,24 +331,34 @@ python tools/gif_to_c.py your_animation.gif anim_name
 |------|------|------|
 | Flash（位图帧） | ~32 KB | 32 帧 × 1024 字节 |
 | Flash（代码） | ~12–15 KB | HAL 驱动 + OLED 驱动 + 动画引擎 + 字库 |
-| Flash（总计） | ~44–47 KB | 占 64KB 的 ~73%，有余量 |
+| Flash（总计） | ~44–47 KB | 占 64KB 的 ~72%，有余量 |
 | RAM（帧缓冲） | 1 KB | 静态分配的 oled_buffer[8][128] |
 | RAM（栈/堆） | ~2–4 KB | 取决于 HAL 和编译器设置 |
 | RAM（总计） | ~3–5 KB | 占 20KB 的 ~25%，充足 |
 
 ---
 
-## 关键技术决策
+## 关键技术决策与踩坑记录
 
-1. **列优先帧缓冲布局**：与 CH1116 I2C 水平寻址模式中的硬件自动增量顺序一致，使得 `OLED_ShowFrame()` 可以通过一次连续的 I2C 传输将整帧发送出去，无需额外变换。
+1. **I2C 地址 0x3D vs 0x7A**：数据手册常以 8 位写地址标注（0x7A = 0x3D << 1）。HAL 期望的是 7 位地址左移 1 位，即 `(0x3D << 1) = 0x7A`。若误将 0x7A 当作 7 位地址再次左移（→ 0xF4），OLED 完全不响应，屏幕全黑。
 
-2. **双模式动画引擎**：程序化模式适合交互式 UI 和小动画（无 Flash 开销），位图模式适合播放预先制作的 GIF 素材。两种模式共享统一的帧播放逻辑。
+2. **逐页 I2C 传输**：`HAL_I2C_Mem_Write` 在 STM32F1 上存在隐式传输大小上限。一次性发送 1024 字节仅前 ~512 字节被写入，后 4 页保留上电随机数据，表现为**屏幕下半部分雪花白屏**。改为 8 次独立的 128 字节传输 + 页寻址模式彻底解决。
 
-3. **HSE 回退机制**：`SystemClock_Config()` 在外部晶振启动失败时自动切换到内部 HSI，确保固件在任何硬件条件下都能运行（尽管可能降频）。
+3. **页寻址模式**：页寻址模式（0x02）比水平寻址模式（0x00）在逐页传输时更可靠——每次写完 128 字节后列指针自动归零，无需依赖窗口地址设置。
 
-4. **auto_gif.py 重写 main.c**：脚本以完全重写的方式更新 main.c，而非编辑已有文件，这样确保输出一致性。原始模板内嵌在脚本中，可根据需要修改。
+4. **GIF 帧合成（Compositing）**：GIF 帧不是完整图像，而是增量差量——每帧仅包含变化的像素区域。必须将每帧叠加到累积画布上（透明像素不覆盖）才能重建完整画面。源 GIF 为透明背景的 Web 图片，需使用**白色画布**合成，否则猫在黑色画布上完全不可见。
 
-5. **Python 工具而非编译时生成**：选择运行时运行 Python 脚本而非 CMake 的 `add_custom_command`，因为工具链环境不一定有 Python/Pillow，且动画数据很少变动，预生成更简单可靠。
+5. **抽帧策略**：简单取前 N 帧会包含开头的空白帧（GIF 编码占位帧），导致动画循环时猫"消失"一下。均匀采样 + 跳过内容低于 3% 的帧 + 调整延迟，保证动画流畅且无缝循环。
+
+6. **二值化阈值**：阈值 140 对于深色线条/填充在浅色背景上的 GIF 效果最佳。`tools/debug_frames/oled_*.png` 可以直接预览 OLED 实际显示效果，便于调优。
+
+7. **HSE 预分频器**：STM32F103C8T6 无 HSE 预分频器。设置 `HSEPredivValue` 可能导致 `HAL_RCC_OscConfig()` 返回错误，触发 HSI 回退或时钟异常。
+
+8. **SysTick 显式重配置**：`HAL_RCC_ClockConfig` 在部分 HAL 版本中不会自动更新 SysTick 频率。时钟切换后显式调用 `HAL_SYSTICK_Config(HAL_RCC_GetHCLKFreq() / 1000U)` 确保 `HAL_Delay()` 正确。
+
+9. **I2C 有限超时**：使用 `HAL_MAX_DELAY`（无限等待）意味着 OLED 无应答时 MCU 永久死等。改为 100ms 超时，即使 I2C 通信失败也能继续运行。
+
+10. **Python 工具而非编译时生成**：选择运行时运行 Python 脚本而非 CMake 的 `add_custom_command`，因为工具链环境不一定有 Python/Pillow，且动画数据很少变动，预生成更简单可靠。
 
 ---
 
